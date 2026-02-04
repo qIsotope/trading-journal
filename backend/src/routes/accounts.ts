@@ -13,6 +13,46 @@ const AccountSchema = z.object({
 
 const AccountUpdateSchema = AccountSchema.partial().omit({ mt5_login: true });
 
+interface MT5AccountInfo {
+  login: number;
+  server: string;
+  balance: number;
+  equity: number;
+  margin: number;
+  margin_free: number;
+  profit: number;
+  currency: string;
+  leverage: number;
+}
+
+interface MT5Trade {
+  deal_id: number;
+  ticket: number;
+  symbol: string;
+  direction: string;
+  volume: number;
+  open_price: number;
+  close_price: number;
+  stop_loss: number | null;
+  take_profit: number | null;
+  open_time: string;
+  close_time: string;
+  profit: number;
+  commission: number;
+  swap: number;
+}
+
+interface MT5SyncResponse {
+  success: boolean;
+  account_info: MT5AccountInfo;
+  trades: MT5Trade[];
+  trades_count: number;
+}
+
+interface QueryParams {
+  id?: string;
+}
+
 export async function accountsRoutes(fastify: FastifyInstance) {
   const db = getDatabase();
 
@@ -27,8 +67,9 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       `).all();
 
       return { accounts };
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 
@@ -48,8 +89,9 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       }
 
       return account;
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 
@@ -80,13 +122,14 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       `).get(result.lastInsertRowid);
 
       reply.status(201).send(account);
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
+    } catch (error) {
+      if (error instanceof z.ZodError) {
         reply.status(400).send({ error: 'Validation error', details: error.errors });
-      } else if (error.message.includes('UNIQUE constraint failed')) {
+      } else if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
         reply.status(409).send({ error: 'Account with this login already exists' });
       } else {
-        reply.status(500).send({ error: error.message });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        reply.status(500).send({ error: message });
       }
     }
   });
@@ -105,7 +148,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
 
       // Build update query
       const updates: string[] = [];
-      const params: any[] = [];
+      const params: (string | number | null)[] = [];
 
       if (validatedData.mt5_server) {
         updates.push('mt5_server = ?');
@@ -140,11 +183,12 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       `).get(id);
 
       return updated;
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
+    } catch (error) {
+      if (error instanceof z.ZodError) {
         reply.status(400).send({ error: 'Validation error', details: error.errors });
       } else {
-        reply.status(500).send({ error: error.message });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        reply.status(500).send({ error: message });
       }
     }
   });
@@ -163,8 +207,9 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       db.prepare('UPDATE accounts SET is_active = 0 WHERE id = ?').run(id);
 
       return { success: true, message: 'Account deactivated' };
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 
@@ -174,7 +219,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string };
 
       // Get account with encrypted password
-      const account = db.query('SELECT * FROM accounts WHERE id = ?').get(id) as any;
+      const account = db.query('SELECT * FROM accounts WHERE id = ?').get(id) as Account | undefined;
       if (!account) {
         return reply.status(404).send({ error: 'Account not found' });
       }
@@ -194,11 +239,11 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to sync with MT5');
+        const errorData = await response.json() as { detail?: string };
+        throw new Error(errorData.detail || 'Failed to sync with MT5');
       }
 
-      const syncData = await response.json();
+      const syncData = await response.json() as MT5SyncResponse;
 
       // Update account info in DB
       db.query(`
@@ -254,9 +299,10 @@ export async function accountsRoutes(fastify: FastifyInstance) {
         account_info: syncData.account_info,
         new_trades: syncData.trades_count
       };
-    } catch (error: any) {
+    } catch (error) {
       fastify.log.error(error);
-      reply.status(500).send({ error: error.message });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 
@@ -279,8 +325,9 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       `).get(id);
 
       return stats;
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 }

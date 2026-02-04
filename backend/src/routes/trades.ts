@@ -1,6 +1,6 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { getDatabase } from '../db/database';
-import { Trade } from '../db/schema';
+import type { Trade } from '../db/schema';
 import { z } from 'zod';
 
 const TradeSchema = z.object({
@@ -33,16 +33,33 @@ const TradeSchema = z.object({
 
 const TradeUpdateSchema = TradeSchema.partial().omit({ account_id: true, deal_id: true });
 
+interface TradeQueryParams {
+  account_id?: string;
+  symbol?: string;
+  session?: string;
+  result?: string;
+  limit?: number;
+  offset?: number;
+}
+
+interface StatsQueryParams {
+  account_id?: string;
+}
+
+interface IdParams {
+  id: string;
+}
+
 export async function tradesRoutes(fastify: FastifyInstance) {
   const db = getDatabase();
 
   // GET all trades
   fastify.get('/api/trades', async (request, reply) => {
     try {
-      const { account_id, symbol, session, result, limit = 100, offset = 0 } = request.query as any;
+      const { account_id, symbol, session, result, limit = 100, offset = 0 } = request.query as TradeQueryParams;
 
       let query = 'SELECT * FROM trades WHERE 1=1';
-      const params: any[] = [];
+      const params: (string | number)[] = [];
 
       if (account_id) {
         query += ' AND account_id = ?';
@@ -70,15 +87,16 @@ export async function tradesRoutes(fastify: FastifyInstance) {
       const trades = db.prepare(query).all(...params);
 
       return { trades, count: trades.length };
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 
   // GET single trade
   fastify.get('/api/trades/:id', async (request, reply) => {
     try {
-      const { id } = request.params as { id: string };
+      const { id } = request.params as IdParams;
 
       const trade = db.prepare('SELECT * FROM trades WHERE id = ?').get(id);
 
@@ -87,8 +105,9 @@ export async function tradesRoutes(fastify: FastifyInstance) {
       }
 
       return trade;
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 
@@ -120,11 +139,12 @@ export async function tradesRoutes(fastify: FastifyInstance) {
       const trade = db.prepare('SELECT * FROM trades WHERE id = ?').get(result.lastInsertRowid);
 
       reply.status(201).send(trade);
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
+    } catch (error) {
+      if (error instanceof z.ZodError) {
         reply.status(400).send({ error: 'Validation error', details: error.errors });
       } else {
-        reply.status(500).send({ error: error.message });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        reply.status(500).send({ error: message });
       }
     }
   });
@@ -132,7 +152,7 @@ export async function tradesRoutes(fastify: FastifyInstance) {
   // PUT update trade
   fastify.put('/api/trades/:id', async (request, reply) => {
     try {
-      const { id } = request.params as { id: string };
+      const { id } = request.params as IdParams;
       const validatedData = TradeUpdateSchema.parse(request.body);
 
       // Check if trade exists
@@ -156,11 +176,12 @@ export async function tradesRoutes(fastify: FastifyInstance) {
       const updated = db.prepare('SELECT * FROM trades WHERE id = ?').get(id);
 
       return updated;
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
+    } catch (error) {
+      if (error instanceof z.ZodError) {
         reply.status(400).send({ error: 'Validation error', details: error.errors });
       } else {
-        reply.status(500).send({ error: error.message });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        reply.status(500).send({ error: message });
       }
     }
   });
@@ -168,7 +189,7 @@ export async function tradesRoutes(fastify: FastifyInstance) {
   // DELETE trade
   fastify.delete('/api/trades/:id', async (request, reply) => {
     try {
-      const { id } = request.params as { id: string };
+      const { id } = request.params as IdParams;
 
       const existing = db.prepare('SELECT * FROM trades WHERE id = ?').get(id);
       if (!existing) {
@@ -178,18 +199,19 @@ export async function tradesRoutes(fastify: FastifyInstance) {
       db.prepare('DELETE FROM trades WHERE id = ?').run(id);
 
       return { success: true, message: 'Trade deleted' };
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 
   // GET trade statistics
   fastify.get('/api/trades/stats', async (request, reply) => {
     try {
-      const { account_id } = request.query as any;
+      const { account_id } = request.query as StatsQueryParams;
 
       let whereClause = '1=1';
-      const params: any[] = [];
+      const params: string[] = [];
 
       if (account_id) {
         whereClause = 'account_id = ?';
@@ -211,48 +233,9 @@ export async function tradesRoutes(fastify: FastifyInstance) {
       `).get(...params);
 
       return stats;
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
-    }
-  });
-
-  // GET management log for trade
-  fastify.get('/api/trades/:id/management-log', async (request, reply) => {
-    try {
-      const { id } = request.params as { id: string };
-
-      const logs = db.prepare(`
-        SELECT * FROM trade_management_log
-        WHERE trade_id = ?
-        ORDER BY timestamp DESC
-      `).all(id);
-
-      return { logs };
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
-    }
-  });
-
-  // POST management log entry
-  fastify.post('/api/trades/:id/management-log', async (request, reply) => {
-    try {
-      const { id } = request.params as { id: string };
-      const { action_type, old_sl, new_sl, old_tp, new_tp, price_at_change, pips_moved, reason } = request.body as any;
-
-      const stmt = db.prepare(`
-        INSERT INTO trade_management_log (
-          trade_id, action_type, old_sl, new_sl, old_tp, new_tp,
-          price_at_change, pips_moved, reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const result = stmt.run(id, action_type, old_sl, new_sl, old_tp, new_tp, price_at_change, pips_moved, reason);
-
-      const log = db.prepare('SELECT * FROM trade_management_log WHERE id = ?').get(result.lastInsertRowid);
-
-      reply.status(201).send(log);
-    } catch (error: any) {
-      reply.status(500).send({ error: error.message });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
     }
   });
 }

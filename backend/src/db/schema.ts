@@ -59,45 +59,6 @@ CREATE TABLE IF NOT EXISTS trades (
   UNIQUE(account_id, deal_id)
 );
 
--- Open Positions
-CREATE TABLE IF NOT EXISTS open_positions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  account_id INTEGER NOT NULL,
-  position_id TEXT NOT NULL,
-  ticket TEXT,
-  symbol TEXT NOT NULL,
-  direction TEXT NOT NULL CHECK(direction IN ('LONG', 'SHORT')),
-  volume REAL NOT NULL,
-  open_price REAL NOT NULL,
-  current_price REAL,
-  stop_loss REAL,
-  take_profit REAL,
-  open_time DATETIME NOT NULL,
-  profit REAL DEFAULT 0,
-  swap REAL DEFAULT 0,
-  last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
-  UNIQUE(account_id, position_id)
-);
-
--- Trade Management Log (для відслідковування змін SL/TP)
-CREATE TABLE IF NOT EXISTS trade_management_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  trade_id INTEGER,
-  position_id INTEGER,
-  action_type TEXT NOT NULL CHECK(action_type IN ('SL_MOVED', 'TP_MOVED', 'BREAKEVEN', 'PARTIAL_CLOSE', 'TRAILING_STOP')),
-  old_sl REAL,
-  new_sl REAL,
-  old_tp REAL,
-  new_tp REAL,
-  price_at_change REAL,
-  pips_moved REAL,
-  reason TEXT,
-  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (trade_id) REFERENCES trades(id) ON DELETE CASCADE,
-  FOREIGN KEY (position_id) REFERENCES open_positions(id) ON DELETE CASCADE
-);
-
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_trades_account ON trades(account_id);
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
@@ -105,9 +66,6 @@ CREATE INDEX IF NOT EXISTS idx_trades_open_time ON trades(open_time);
 CREATE INDEX IF NOT EXISTS idx_trades_notion ON trades(synced_to_notion);
 CREATE INDEX IF NOT EXISTS idx_trades_session ON trades(session);
 CREATE INDEX IF NOT EXISTS idx_trades_result ON trades(result);
-CREATE INDEX IF NOT EXISTS idx_positions_account ON open_positions(account_id);
-CREATE INDEX IF NOT EXISTS idx_management_trade ON trade_management_log(trade_id);
-CREATE INDEX IF NOT EXISTS idx_management_position ON trade_management_log(position_id);
 `;
 
 export interface Account {
@@ -164,37 +122,4 @@ export interface Trade {
   synced_to_notion?: boolean;
   created_at?: string;
   updated_at?: string;
-}
-
-export interface OpenPosition {
-  id?: number;
-  account_id: number;
-  position_id: string;
-  ticket?: string;
-  symbol: string;
-  direction: 'LONG' | 'SHORT';
-  volume: number;
-  open_price: number;
-  current_price?: number;
-  stop_loss?: number;
-  take_profit?: number;
-  open_time: string;
-  profit?: number;
-  swap?: number;
-  last_updated?: string;
-}
-
-export interface TradeManagementLog {
-  id?: number;
-  trade_id?: number;
-  position_id?: number;
-  action_type: 'SL_MOVED' | 'TP_MOVED' | 'BREAKEVEN' | 'PARTIAL_CLOSE' | 'TRAILING_STOP';
-  old_sl?: number;
-  new_sl?: number;
-  old_tp?: number;
-  new_tp?: number;
-  price_at_change?: number;
-  pips_moved?: number;
-  reason?: string;
-  timestamp?: string;
 }
