@@ -1,9 +1,9 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import cookie from '@fastify/cookie';
-import jwt from '@fastify/jwt';
 import dotenv from 'dotenv';
 import { initDatabase, checkDatabaseHealth } from './db/database';
+import { tradesRoutes } from './routes/trades';
+import { accountsRoutes } from './routes/accounts';
 
 dotenv.config();
 
@@ -22,20 +22,12 @@ await fastify.register(cors, {
   credentials: true,
 });
 
-await fastify.register(cookie, {
-  secret: process.env.COOKIE_SECRET,
-});
-
-await fastify.register(jwt, {
-  secret: process.env.JWT_SECRET || 'supersecret',
-  cookie: {
-    cookieName: 'token',
-    signed: true,
-  },
-});
-
 // Initialize database
 initDatabase();
+
+// Register routes
+await fastify.register(tradesRoutes);
+await fastify.register(accountsRoutes);
 
 // Health check
 fastify.get('/health', async () => {
@@ -57,11 +49,21 @@ fastify.get('/api', async () => {
       api: 'GET /api',
       trades: {
         getAll: 'GET /api/trades',
+        getOne: 'GET /api/trades/:id',
         create: 'POST /api/trades',
+        update: 'PUT /api/trades/:id',
+        delete: 'DELETE /api/trades/:id',
+        stats: 'GET /api/trades/stats',
+        managementLog: 'GET /api/trades/:id/management-log',
       },
       accounts: {
         getAll: 'GET /api/accounts',
+        getOne: 'GET /api/accounts/:id',
         create: 'POST /api/accounts',
+        update: 'PUT /api/accounts/:id',
+        delete: 'DELETE /api/accounts/:id',
+        sync: 'POST /api/accounts/:id/sync',
+        stats: 'GET /api/accounts/:id/stats',
       },
     }
   };

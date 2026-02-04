@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import { createTablesSQL } from './schema';
 import path from 'path';
 
@@ -6,13 +6,13 @@ const DB_PATH = path.join(process.cwd(), 'trading-journal.db');
 
 export const db = new Database(DB_PATH);
 
-db.pragma('foreign_keys = ON');
+db.run('PRAGMA foreign_keys = ON');
 
 export function initDatabase() {
   console.log('🗄️  Initializing database...');
 
   try {
-    db.exec(createTablesSQL);
+    db.run(createTablesSQL);
     console.log('✅ Database initialized successfully');
   } catch (error) {
     console.error('❌ Error initializing database:', error);
@@ -22,12 +22,16 @@ export function initDatabase() {
 
 export function checkDatabaseHealth() {
   try {
-    const result = db.prepare('SELECT 1 as health').get();
+    const result = db.query('SELECT 1 as health').get();
     return result !== undefined;
   } catch (error) {
     console.error('Database health check failed:', error);
     return false;
   }
+}
+
+export function getDatabase() {
+  return db;
 }
 
 process.on('SIGINT', () => {
