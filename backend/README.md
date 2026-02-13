@@ -18,8 +18,8 @@ cp .env.example .env
 Для Supabase вкажіть у `.env`:
 
 - `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_PUBLISHABLE_KEY` (або legacy `SUPABASE_ANON_KEY`)
+- `SUPABASE_SECRET_KEY` (або legacy `SUPABASE_SERVICE_ROLE_KEY`)
 
 Поточний runtime працює тільки через Supabase (`accounts` CRUD + stats + `MT5 sync`).
 

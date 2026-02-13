@@ -24,7 +24,7 @@ export async function checkSupabaseHealth() {
 
   try {
     const supabase = getSupabaseAdminClient();
-    const { error } = await supabase.from('_supabase_migrations').select('version').limit(1);
+    const { error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1 });
 
     if (error) {
       return { configured: true, healthy: false, error: error.message };
