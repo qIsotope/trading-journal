@@ -1,6 +1,6 @@
 # Trading Journal Backend
 
-Backend API на Bun + Fastify + SQLite (+ Supabase integration).
+Backend API на Bun + Fastify + Supabase.
 
 ## Встановлення
 
@@ -21,11 +21,14 @@ cp .env.example .env
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-## Міграція БД
+Поточний runtime працює тільки через Supabase (`accounts` CRUD + stats + `MT5 sync`).
 
-```bash
-bun run db:migrate
-```
+Схема для Supabase знаходиться у [backend/supabase/schema.sql](backend/supabase/schema.sql).
+
+## Ініціалізація БД
+
+1. Відкрий Supabase SQL Editor
+2. Виконай SQL із [backend/supabase/schema.sql](backend/supabase/schema.sql)
 
 ## Запуск
 

@@ -1,4 +1,7 @@
-import type { Account } from '../db/schema';
+interface Mt5AccountCredentials {
+  mt5_login: string;
+  mt5_server: string;
+}
 
 export interface MT5AccountInfo {
   login: number;
@@ -36,7 +39,7 @@ export interface MT5SyncResponse {
   trades_count: number;
 }
 
-export async function fetchMt5SyncData(account: Account, decryptedPassword: string): Promise<MT5SyncResponse> {
+export async function fetchMt5SyncData(account: Mt5AccountCredentials, decryptedPassword: string): Promise<MT5SyncResponse> {
   const response = await fetch('http://localhost:8000/sync-account', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

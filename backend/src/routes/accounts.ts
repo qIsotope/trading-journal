@@ -29,7 +29,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ error: 'Unauthorized' });
       }
 
-      const accounts = getAccounts(userId);
+      const accounts = await getAccounts(userId);
 
       return { accounts };
     } catch (error) {
@@ -47,7 +47,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ error: 'Unauthorized' });
       }
 
-      const account = getAccountById(id, userId);
+      const account = await getAccountById(id, userId);
 
       if (!account) {
         return reply.status(404).send({ error: 'Account not found' });
@@ -69,7 +69,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ error: 'Unauthorized' });
       }
 
-      const account = createAccount({ ...validatedData, user_id: userId });
+      const account = await createAccount({ ...validatedData, user_id: userId });
 
       reply.status(201).send(account);
     } catch (error) {
@@ -94,7 +94,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ error: 'Unauthorized' });
       }
 
-      const result = updateAccount(id, userId, validatedData);
+      const result = await updateAccount(id, userId, validatedData);
 
       if (!result.exists) {
         return reply.status(404).send({ error: 'Account not found' });
@@ -124,7 +124,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ error: 'Unauthorized' });
       }
 
-      const deleted = deactivateAccount(id, userId);
+      const deleted = await deactivateAccount(id, userId);
       if (!deleted) {
         return reply.status(404).send({ error: 'Account not found' });
       }
@@ -174,7 +174,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ error: 'Unauthorized' });
       }
 
-      const stats = getStatsByAccountId(id, userId);
+      const stats = await getStatsByAccountId(id, userId);
 
       return stats;
     } catch (error) {

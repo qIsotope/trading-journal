@@ -1,8 +1,13 @@
 import type { Database } from 'bun:sqlite';
 import type { FastifyBaseLogger } from 'fastify';
 import type { MT5SyncResponse } from '../clients/mt5Client';
+import {
+  insertTradesIgnoreDuplicatesSupabase,
+  resetTradesNotionSyncSupabase,
+  updateAccountSnapshotSupabase,
+} from '../repositories/supabaseTradesRepository';
 import { buildTradeMetrics } from './tradeMetricsService';
-import { syncTradesToNotion } from './notionSyncService';
+import { syncTradesToNotion, syncTradesToNotionSupabase } from './notionSyncService';
 
 export { fetchMt5SyncData } from '../clients/mt5Client';
 
@@ -78,6 +83,77 @@ export async function persistSyncData(params: {
 
   await syncTradesToNotion({
     db,
+    accountId,
+    accountName,
+    trades: syncData.trades,
+    logger,
+  });
+
+  return {
+    success: true,
+    message: `Synced ${syncData.trades_count} trades`,
+    account_info: syncData.account_info,
+    new_trades: syncData.trades_count,
+  };
+}
+
+export async function persistSyncDataSupabase(params: {
+  accountId: number;
+  userId: string;
+  accountName: string | null | undefined;
+  syncData: MT5SyncResponse;
+  resyncNotion: boolean;
+  logger: FastifyBaseLogger;
+}) {
+  const { accountId, userId, accountName, syncData, resyncNotion, logger } = params;
+
+  await updateAccountSnapshotSupabase({
+    accountId,
+    userId,
+    balance: syncData.account_info.balance,
+    equity: syncData.account_info.equity,
+    margin: syncData.account_info.margin,
+    marginFree: syncData.account_info.margin_free,
+    profit: syncData.account_info.profit,
+    currency: syncData.account_info.currency,
+    leverage: syncData.account_info.leverage,
+  });
+
+  const rows = syncData.trades.map((trade) => {
+    const metrics = buildTradeMetrics(trade);
+    return {
+      account_id: accountId,
+      deal_id: String(trade.deal_id),
+      ticket: String(trade.ticket),
+      symbol: trade.symbol,
+      direction: trade.direction as 'LONG' | 'SHORT',
+      volume: trade.volume,
+      open_price: trade.open_price,
+      close_price: trade.close_price,
+      stop_loss: trade.stop_loss,
+      take_profit: trade.take_profit,
+      open_time: metrics.openTimeIso,
+      close_time: metrics.closeTimeIso,
+      weekday: metrics.weekday,
+      session: metrics.session,
+      risk_percent: metrics.riskPercent,
+      risk_reward: metrics.riskReward,
+      result: metrics.result,
+      profit: trade.profit,
+      profit_percent: metrics.profitPercent,
+      commission: metrics.commission,
+      swap: trade.swap,
+    };
+  });
+
+  await insertTradesIgnoreDuplicatesSupabase(rows);
+
+  if (resyncNotion) {
+    await resetTradesNotionSyncSupabase(accountId);
+    logger.info({ notion: 'resync_reset', account_id: accountId });
+  }
+
+  await syncTradesToNotionSupabase({
     accountId,
     accountName,
     trades: syncData.trades,

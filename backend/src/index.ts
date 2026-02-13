@@ -1,7 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import dotenv from 'dotenv';
-import { initDatabase, checkDatabaseHealth } from './db/database';
 import { accountsRoutes } from './routes/accounts';
 import { checkSupabaseHealth, isSupabaseConfigured } from './lib/supabase';
 import { authRoutes } from './routes/auth';
@@ -23,23 +22,18 @@ await fastify.register(cors, {
   credentials: true,
 });
 
-// Initialize database
-initDatabase();
-
 // Register routes
 await fastify.register(authRoutes);
 await fastify.register(accountsRoutes);
 
 // Health check
 fastify.get('/health', async () => {
-  const dbHealthy = checkDatabaseHealth();
   const supabase = await checkSupabaseHealth();
-
-  const status = dbHealthy && (supabase.healthy || !supabase.configured) ? 'ok' : 'degraded';
+  const status = supabase.healthy || !supabase.configured ? 'ok' : 'degraded';
 
   return {
     status,
-    database: dbHealthy ? 'connected' : 'disconnected',
+    database: supabase.healthy ? 'supabase' : 'supabase-unavailable',
     supabase,
     timestamp: new Date().toISOString()
   };
