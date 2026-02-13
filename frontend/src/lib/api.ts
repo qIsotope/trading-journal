@@ -10,8 +10,8 @@ export interface Trade {
   volume: number;
   open_price: number;
   close_price?: number;
-  open_time: string;
-  close_time?: string;
+  open_time: number;
+  close_time?: number | null;
   profit?: number;
   commission?: number;
   swap?: number;
@@ -37,7 +37,7 @@ class ApiClient {
 
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    
+
     const response = await fetch(url, {
       ...options,
       headers: {

@@ -3,6 +3,7 @@ import { getDatabase } from '../db/database';
 import type { Account } from '../db/schema';
 import { z } from 'zod';
 import { encrypt, decrypt } from '../lib/crypto';
+import { createNotionTradePage, fetchNotionDatabase } from '../lib/notion';
 
 const AccountSchema = z.object({
   mt5_login: z.string(),
@@ -35,8 +36,8 @@ interface MT5Trade {
   close_price: number;
   stop_loss: number | null;
   take_profit: number | null;
-  open_time: string;
-  close_time: string;
+  open_time: number;
+  close_time: number | null;
   profit: number;
   commission: number;
   swap: number;
@@ -48,6 +49,81 @@ interface MT5SyncResponse {
   trades: MT5Trade[];
   trades_count: number;
 }
+
+const START_BALANCE = Number(process.env.ACCOUNT_START_BALANCE || 10000);
+const BE_THRESHOLD_PERCENT = Number(process.env.BE_THRESHOLD_PERCENT || 0.15); // 15$ of 10k = 0.15%
+const SL_TOLERANCE_PERCENT = Number(process.env.SL_TOLERANCE_PERCENT || 10);
+const CONTRACT_SIZE_DEFAULT = Number(process.env.CONTRACT_SIZE_DEFAULT || 100000);
+
+const calcRiskMoney = (openPrice: number, stopLoss: number | null, volume: number) => {
+  if (!stopLoss || openPrice === 0) return null;
+  return Math.abs(openPrice - stopLoss) * volume * CONTRACT_SIZE_DEFAULT;
+};
+
+const TIME_OFFSET_HOURS = -2;
+
+const getWeekdayFromTs = (ts: number, offsetHours = 0) => {
+  const date = new Date((ts + offsetHours * 3600) * 1000);
+  const weekdayIndex = date.getDay();
+  const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return names[weekdayIndex] || 'Unknown';
+};
+
+const getSessionFromTs = (ts: number, offsetHours = 0) => {
+  const hour = new Date((ts + offsetHours * 3600) * 1000).getHours();
+  if (hour >= 0 && hour < 9) return 'ASIA';
+  if (hour >= 9 && hour < 10) return 'FRANKFURT';
+  if (hour >= 10 && hour < 15) return 'LONDON';
+  if (hour >= 15 && hour < 23) return 'NEWYORK';
+  return 'ASIA';
+};
+
+const getDateOnlyFromTs = (ts: number, offsetHours = 0) => {
+  const date = new Date((ts + offsetHours * 3600) * 1000);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatIsoFromTs = (ts: number, offsetHours = 0) => {
+  const date = new Date((ts + offsetHours * 3600) * 1000);
+  return date.toISOString();
+};
+
+const calcRiskPercent = (riskMoney: number | null) => {
+  if (!riskMoney || START_BALANCE === 0) return null;
+  return (riskMoney / START_BALANCE) * 100;
+};
+
+const calcProfitPercent = (profit: number) => {
+  if (START_BALANCE === 0) return null;
+  return (profit / START_BALANCE) * 100;
+};
+
+const round2 = (value: number | null) => {
+  if (value === null) return null;
+  return Math.round(value * 100) / 100;
+};
+
+const getResult = (profit: number, riskMoney: number | null, profitPercent: number | null) => {
+  if (profitPercent !== null && Math.abs(profitPercent) <= BE_THRESHOLD_PERCENT) return 'BE';
+
+  if (riskMoney !== null && profit < 0) {
+    const tolerance = Math.abs(riskMoney) * (SL_TOLERANCE_PERCENT / 100);
+    if (Math.abs(profit + riskMoney) <= tolerance) return 'SL';
+  }
+
+  if (profit > 0) return 'TP';
+  return 'MANUAL';
+};
+
+const calcRiskReward = (profit: number, riskMoney: number | null, result: string) => {
+  if (result === 'BE') return 0;
+  if (result === 'SL') return -1;
+  if (!riskMoney || riskMoney === 0) return null;
+  return profit / riskMoney;
+};
 
 interface QueryParams {
   id?: string;
@@ -217,6 +293,7 @@ export async function accountsRoutes(fastify: FastifyInstance) {
   fastify.post('/api/accounts/:id/sync', async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
+      const { resync_notion } = request.query as { resync_notion?: string };
 
       // Get account with encrypted password
       const account = db.query('SELECT * FROM accounts WHERE id = ?').get(id) as Account | undefined;
@@ -225,7 +302,13 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       }
 
       // Decrypt password
-      const decryptedPassword = decrypt(account.mt5_password_encrypted);
+      let decryptedPassword: string;
+      try {
+        decryptedPassword = decrypt(account.mt5_password_encrypted);
+      } catch (decryptError) {
+        const message = decryptError instanceof Error ? decryptError.message : 'Failed to decrypt password';
+        return reply.status(400).send({ error: message });
+      }
 
       // Call Python MT5 API with credentials
       const response = await fetch('http://localhost:8000/sync-account', {
@@ -268,12 +351,22 @@ export async function accountsRoutes(fastify: FastifyInstance) {
         INSERT OR IGNORE INTO trades (
           account_id, deal_id, ticket, symbol, direction, volume,
           open_price, close_price, stop_loss, take_profit,
-          open_time, close_time,
-          profit, commission, swap
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          open_time, close_time, weekday, session,
+          risk_percent, risk_reward, result,
+          profit, profit_percent, commission, swap
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const trade of syncData.trades) {
+        const weekday = getWeekdayFromTs(trade.open_time, TIME_OFFSET_HOURS);
+        const session = getSessionFromTs(trade.open_time, TIME_OFFSET_HOURS);
+        const riskMoney = calcRiskMoney(trade.open_price, trade.stop_loss, trade.volume);
+        const riskPercent = round2(calcRiskPercent(riskMoney));
+        const profitPercent = calcProfitPercent(trade.profit);
+        const result = getResult(trade.profit, riskMoney, profitPercent);
+        const riskReward = round2(calcRiskReward(trade.profit, riskMoney, result));
+        const commission = round2(trade.commission) ?? trade.commission;
+
         insertTrade.run(
           id,
           trade.deal_id,
@@ -287,10 +380,85 @@ export async function accountsRoutes(fastify: FastifyInstance) {
           trade.take_profit,
           trade.open_time,
           trade.close_time,
+          weekday,
+          session,
+          riskPercent,
+          riskReward,
+          result,
           trade.profit,
-          trade.commission,
+          profitPercent,
+          commission,
           trade.swap
         );
+      }
+
+      if (resync_notion === '1') {
+        db.query(
+          'UPDATE trades SET synced_to_notion = 0, notion_page_id = NULL WHERE account_id = ?'
+        ).run(id);
+        fastify.log.info({ notion: 'resync_reset', account_id: id });
+      }
+
+      // Sync trades to Notion (if configured)
+      const getTradeSyncState = db.query(
+        'SELECT id, synced_to_notion FROM trades WHERE account_id = ? AND deal_id = ?'
+      );
+      const updateTradeNotion = db.query(`
+        UPDATE trades
+        SET notion_page_id = ?, synced_to_notion = 1, updated_at = CURRENT_TIMESTAMP
+        WHERE account_id = ? AND deal_id = ?
+      `);
+
+      fastify.log.info({ notion: 'sync_start', trades: syncData.trades.length, account_id: id });
+
+      for (const trade of syncData.trades) {
+        const existing = getTradeSyncState.get(id, String(trade.deal_id)) as
+          | { id: number; synced_to_notion: number }
+          | undefined;
+
+        if (!existing || existing.synced_to_notion) {
+          fastify.log.info({ notion: 'skip', deal_id: trade.deal_id, reason: !existing ? 'not_inserted' : 'already_synced' });
+          continue;
+        }
+
+        const weekday = getWeekdayFromTs(trade.open_time, TIME_OFFSET_HOURS);
+        const session = getSessionFromTs(trade.open_time, TIME_OFFSET_HOURS);
+        const riskMoney = calcRiskMoney(trade.open_price, trade.stop_loss, trade.volume);
+        const riskPercent = round2(calcRiskPercent(riskMoney));
+        const profitPercent = calcProfitPercent(trade.profit);
+        const result = getResult(trade.profit, riskMoney, profitPercent);
+        const riskReward = round2(calcRiskReward(trade.profit, riskMoney, result));
+        const date = getDateOnlyFromTs(trade.open_time, TIME_OFFSET_HOURS);
+        const openTime = formatIsoFromTs(trade.open_time, TIME_OFFSET_HOURS);
+        const closeTime = trade.close_time ? formatIsoFromTs(trade.close_time, TIME_OFFSET_HOURS) : null;
+
+        try {
+          fastify.log.info({ notion: 'create_page_start', deal_id: trade.deal_id });
+          const notionPageId = await createNotionTradePage({
+            accountId: id,
+            accountName: account.account_name ?? null,
+            trade: {
+              ...trade,
+              open_time: openTime,
+              close_time: closeTime,
+              weekday,
+              session,
+              date,
+              result,
+              risk_percent: riskPercent,
+              risk_reward: riskReward,
+            },
+          });
+
+          if (notionPageId) {
+            fastify.log.info({ notion: 'create_page_success', deal_id: trade.deal_id, notion_page_id: notionPageId });
+            updateTradeNotion.run(notionPageId, id, String(trade.deal_id));
+          } else {
+            fastify.log.warn({ notion: 'create_page_empty', deal_id: trade.deal_id });
+          }
+        } catch (notionError) {
+          fastify.log.error({ notion: 'create_page_error', deal_id: trade.deal_id, error: notionError });
+        }
       }
 
       return {
@@ -325,6 +493,23 @@ export async function accountsRoutes(fastify: FastifyInstance) {
       `).get(id);
 
       return stats;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      reply.status(500).send({ error: message });
+    }
+  });
+
+  // GET Notion test endpoint (logs database rows)
+  fastify.get('/api/notion/test', async (_request, reply) => {
+    try {
+      const results = await fetchNotionDatabase(10);
+
+      if (!results) {
+        return reply.status(400).send({ error: 'Notion is not configured' });
+      }
+
+      fastify.log.info({ notion_count: results.length, results });
+      return { success: true, count: results.length };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       reply.status(500).send({ error: message });

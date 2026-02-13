@@ -43,8 +43,8 @@ class HistoricalTrade(BaseModel):
     close_price: float
     stop_loss: Optional[float]
     take_profit: Optional[float]
-    open_time: str
-    close_time: str
+    open_time: int
+    close_time: int
     profit: float
     commission: float
     swap: float
@@ -151,7 +151,18 @@ async def sync_account(credentials: MT5Credentials, days: int = 30):
                                 sl = order.sl if order.sl != 0.0 else None
                                 tp = order.tp if order.tp != 0.0 else None
                                 break
-                    
+
+                    # Визначаємо час відкриття/закриття по ордерах позиції
+                    open_ts = open_deal.time
+                    close_ts = close_deal.time
+                    if ticket in orders_dict:
+                        setup_times = [o.time_setup for o in orders_dict[ticket] if getattr(o, "time_setup", 0)]
+                        done_times = [o.time_done for o in orders_dict[ticket] if getattr(o, "time_done", 0)]
+                        if setup_times:
+                            open_ts = min(setup_times)
+                        if done_times:
+                            close_ts = max(done_times)
+
                     trades.append(HistoricalTrade(
                         deal_id=close_deal.ticket,
                         ticket=ticket,
@@ -162,8 +173,8 @@ async def sync_account(credentials: MT5Credentials, days: int = 30):
                         close_price=close_deal.price,
                         stop_loss=sl,
                         take_profit=tp,
-                        open_time=datetime.fromtimestamp(open_deal.time).isoformat(),
-                        close_time=datetime.fromtimestamp(close_deal.time).isoformat(),
+                        open_time=open_ts,
+                        close_time=close_ts,
                         profit=close_deal.profit,
                         commission=open_deal.commission + close_deal.commission,
                         swap=close_deal.swap
