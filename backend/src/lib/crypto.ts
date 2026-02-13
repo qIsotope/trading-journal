@@ -19,9 +19,20 @@ export function encrypt(text: string): string {
 }
 
 export function decrypt(encryptedText: string): string {
+  if (!encryptedText || !encryptedText.includes(':')) {
+    if (encryptedText?.startsWith('$2')) {
+      throw new Error('Password is bcrypt-hashed and cannot be decrypted');
+    }
+    throw new Error('Invalid encrypted password format');
+  }
+
   const parts = encryptedText.split(':');
   const iv = Buffer.from(parts[0], 'hex');
   const encrypted = parts[1];
+
+  if (iv.length !== IV_LENGTH || !encrypted) {
+    throw new Error('Invalid encrypted password format');
+  }
 
   const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
 

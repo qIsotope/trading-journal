@@ -39,8 +39,9 @@ function DashboardPage() {
 
   // Sync mutation
   const syncMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch(`http://localhost:3001/api/accounts/${accountId}/sync`, {
+    mutationFn: async (options?: { resyncNotion?: boolean }) => {
+      const resyncQuery = options?.resyncNotion ? '?resync_notion=1' : '';
+      const response = await fetch(`http://localhost:3001/api/accounts/${accountId}/sync${resyncQuery}`, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -82,22 +83,34 @@ function DashboardPage() {
             </p>
           )}
         </div>
-        <Button
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-        >
-          {syncMutation.isPending ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Syncing...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Sync Account
-            </>
-          )}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+          >
+            {syncMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Sync Account
+              </>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              const confirmed = window.confirm('Resync Notion? This will re-send all trades.');
+              if (confirmed) syncMutation.mutate({ resyncNotion: true });
+            }}
+            disabled={syncMutation.isPending}
+          >
+            Resync Notion
+          </Button>
+        </div>
       </div>
 
       {syncMutation.isError && (

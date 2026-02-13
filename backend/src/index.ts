@@ -2,7 +2,6 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import dotenv from 'dotenv';
 import { initDatabase, checkDatabaseHealth } from './db/database';
-import { tradesRoutes } from './routes/trades';
 import { accountsRoutes } from './routes/accounts';
 
 dotenv.config();
@@ -26,7 +25,6 @@ await fastify.register(cors, {
 initDatabase();
 
 // Register routes
-await fastify.register(tradesRoutes);
 await fastify.register(accountsRoutes);
 
 // Health check
