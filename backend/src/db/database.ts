@@ -36,6 +36,7 @@ export function initDatabase() {
 
     // Migrations for existing databases (add missing columns)
     ensureColumns('accounts', [
+      { name: 'user_id', type: 'TEXT' },
       { name: 'balance', type: 'REAL' },
       { name: 'equity', type: 'REAL' },
       { name: 'margin', type: 'REAL' },

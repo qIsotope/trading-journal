@@ -80,7 +80,6 @@ export async function createNotionTradePage(input: NotionTradeInput): Promise<st
       title: [{ text: { content: titleForTrade(trade) } }],
     },
   };
-  console.log('asdasd', trade)
 
   addSelectProp(properties, propDirection, trade.direction);
   addDateProp(properties, propOpenTime, trade.open_time);

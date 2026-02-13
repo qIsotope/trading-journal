@@ -2,6 +2,7 @@ export const createTablesSQL = `
 -- MT5 Accounts
 CREATE TABLE IF NOT EXISTS accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT,
   mt5_login TEXT UNIQUE NOT NULL,
   mt5_server TEXT NOT NULL,
   mt5_password_encrypted TEXT NOT NULL,
@@ -66,10 +67,12 @@ CREATE INDEX IF NOT EXISTS idx_trades_open_time ON trades(open_time);
 CREATE INDEX IF NOT EXISTS idx_trades_notion ON trades(synced_to_notion);
 CREATE INDEX IF NOT EXISTS idx_trades_session ON trades(session);
 CREATE INDEX IF NOT EXISTS idx_trades_result ON trades(result);
+CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
 `;
 
 export interface Account {
   id?: number;
+  user_id?: string;
   mt5_login: string;
   mt5_server: string;
   mt5_password_encrypted: string;
